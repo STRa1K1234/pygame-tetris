@@ -5,7 +5,8 @@ import copy
 import random
 
 pygame.init()
-screen = pygame.display.set_mode((1200, 800))
+screen = pygame.display.set_mode((400, 800))
+
 
 class Field:
     def __init__(self, height, width):
@@ -31,8 +32,8 @@ class Field:
 
     def __setitem__(self, index, value):
         a, b = index
-        if a < 0 or a >= self.height: raise RuntimeError("Wrong row")
-        if b < 0 or b >= self.width: raise RuntimeError("Wrong column")
+        if a < 0 or a >= self.height: return #raise RuntimeError("Wrong row")
+        if b < 0 or b >= self.width: return #raise RuntimeError("Wrong column")
         self.cells[a][b] = value
 
     def __getitem__(self, index):
@@ -53,6 +54,8 @@ class Piece:
         self.shape.set_cells(shape)
         self.x = 0
         self.y = 0
+        # TODO: добавить параметр "центр вращения"
+        # TODO: добавить очки, уничтожение рядов, музыку, главное меню
 
     def occupied_cells(self):
         result = []
@@ -101,49 +104,86 @@ class Piece:
         return self.move_by(-1, 0, field)
 
     def rotate_cw(self):
-        new_shape = []
-        for row in self.shape.cells:
-            new_row = []
-            for x, y in row:
-                new_row.append((y, -x))
-            new_shape.append(new_row)
-        self.shape.set_cells(new_shape)
+        new_shape = Field(self.shape.width, self.shape.height)
+        for x in range(self.shape.width):
+            for y in range(self.shape.height):
+                new_shape[x, self.shape.height-1-y] = self.shape[y,x]
+        self.shape.set_cells(new_shape.cells)
 
     def rotate_ccw(self):
-        new_shape = []
-        for row in self.shape.cells:
-            new_row = []
-            for x, y in row:
-                new_row.append((-y, x))
-            new_shape.append(new_row)
-        self.shape.set_cells(new_shape)
+        new_shape = Field(self.shape.width, self.shape.height)
+        for x in range(self.shape.width):
+            for y in range(self.shape.height):
+                new_shape[self.shape.width-1-x, y] = self.shape[y,x]
+        self.shape.set_cells(new_shape.cells)
+
+    def safe_rotate_cw(self, field):
+        self.rotate_cw()
+        if self.intersects_field(field): self.rotate_ccw()
+
+    def safe_rotate_ccw(self, field):
+        self.rotate_ccw()
+        if self.intersects_field(field): self.rotate_cw()
 
 
 def generate_random_piece():
     pieces = [
         [[0, 1, 1],
-         [1, 1, 0]],
+         [1, 1, 0],
+         [0, 0, 0]],
 
         [[1, 0, 0],
-         [1, 1, 1]],
+         [1, 1, 1],
+         [0, 0, 0]],
 
         [[0, 0, 1],
-         [1, 1, 1]],
-
-        [[1, 1],
-         [1, 1]],
+         [1, 1, 1],
+         [0, 0, 0]],
 
         [[1, 1, 0],
-         [0, 1, 1]],
+         [1, 1, 0],
+         [0, 0, 0]],
+
+        [[1, 1, 0],
+         [0, 1, 1],
+         [0, 0, 0]],
 
         [[0, 1, 0],
-         [1, 1, 1]],
-
-        [[1], [1],
-         [1], [1]],
+         [1, 1, 1],
+         [0, 0, 0]],
 
         [[1, 1, 1],
-         [0, 1, 0]]
+         [0, 1, 0],
+         [0, 0, 0]],
+
+        [[1, 1, 0],
+         [0, 1, 0],
+         [0, 1, 0]],
+
+        [[1, 1, 0],
+         [1, 0, 0],
+         [1, 0, 0]],
+
+        [[1, 0, 0],
+         [1, 1, 0],
+         [1, 0, 0]],
+
+        [[0, 1, 0],
+         [1, 1, 0],
+         [0, 1, 0]],
+
+        [[1, 0, 0],
+         [1, 1, 0],
+         [0, 1, 0]],
+
+        [[0, 1, 0],
+         [1, 1, 0],
+         [1, 0, 0]],
+
+        [[1, 0, 0],
+         [1, 0, 0],
+         [1, 0, 0],
+         [1, 0, 0]]
     ]
 
     return Piece(random.choice(pieces))
@@ -155,15 +195,47 @@ class Game:
         self.field = Field(20, 10)
         self.timer = 0
 
+        self.keys_used = set()
+
+
     def step(self):
         if not self.piece.move_down(self.field):
             for coord in self.piece.occupied_cells():
                 self.field[coord] = 1
                 self.piece = generate_random_piece()
 
-        self.timer += 1
-        if self.timer >= 1000 / 60:
-            self.timer = 0
+
+    def redraw(self):
+        screen.fill((0, 0, 0))
+        for row in range(self.field.height):
+            for col in range(self.field.width):
+                if self.field[row, col]:
+                    pygame.draw.rect(screen, (255, 255, 255), (col * 40, row * 40, 40, 40))
+
+        for coord in self.piece.occupied_cells():
+            pygame.draw.rect(screen, (255, 0, 0), (coord[1] * 40, coord[0] * 40, 40, 40))
+
+        pygame.display.flip()
+
+    def process_keys(self):
+        keys = pygame.key.get_pressed()
+        keynames = [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN]
+        keyactions = [
+            (lambda: self.piece.move_left(self.field)),
+            (lambda: self.piece.move_right(self.field)),
+            (lambda: self.piece.safe_rotate_ccw(self.field)),
+            (lambda: self.piece.safe_rotate_cw(self.field)),
+        ]
+
+        for i, name in enumerate(keynames):
+            action = keyactions[i]
+
+            if keys[name]:
+                if name not in self.keys_used:
+                    self.keys_used.add(name)
+                    action()
+            else:
+                self.keys_used.discard(name)
 
     def run(self):
         running = True
@@ -173,29 +245,19 @@ class Game:
                 if event.type == pygame.QUIT:
                     running = False
 
-            screen.fill((0, 0, 0))
+            self.process_keys()
 
-            for row in range(self.field.height):
-                for col in range(self.field.width):
-                    if self.field[row, col]:
-                        pygame.draw.rect(screen, (255, 255, 255), (col * 40, row * 40, 40, 40))
+            clock.tick(180)
+            self.timer += 1
+            self.timer %= 180
 
-            for coord in self.piece.occupied_cells():
-                pygame.draw.rect(screen, (255, 0, 0), (coord[1] * 40, coord[0] * 40, 40, 40))
+            if self.timer % TICKS_PER_FRAME == 0: self.redraw()
+            if self.timer % TICKS_PER_UPDATE == 0: self.step()
 
-            pygame.display.flip()
-            self.step()
-            clock.tick(20)
 
-            keys = pygame.key.get_pressed()
-            if keys[pygame.K_LEFT]:
-                self.piece.move_left(self.field)
-            elif keys[pygame.K_RIGHT]:
-                self.piece.move_right(self.field)
-            elif keys[pygame.K_UP]:
-                self.piece.rotate_ccw()
-            elif keys[pygame.K_DOWN]:
-                self.piece.rotate_cw()
+DIFFICULTY_SPEEDS = [10, 20, 30, 60, 180]
+TICKS_PER_FRAME = 3
+TICKS_PER_UPDATE = DIFFICULTY_SPEEDS[2]
 
 game = Game()
 game.run()
