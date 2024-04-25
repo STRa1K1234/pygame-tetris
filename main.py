@@ -47,13 +47,22 @@ class Field:
         cloned_field.set_cells(self.cells)
         return cloned_field
 
+    def clear_filled_rows(self):
+        new_cells = [row for row in self.cells if 0 in row]
+        rows_cleared = self.height - len(new_cells)
+        for _ in range(rows_cleared):
+            new_cells.insert(0, [0] * self.width)
+        self.cells = new_cells
+        return rows_cleared
+
 
 class Piece:
-    def __init__(self, shape):
+    def __init__(self, shape, center_of_rotation=(0, 0)):
         self.shape = Field(0, 0)
         self.shape.set_cells(shape)
         self.x = 0
         self.y = 0
+        self.center_of_rotation = center_of_rotation
         # TODO: добавить параметр "центр вращения"
         # TODO: добавить очки, уничтожение рядов, музыку, главное меню
 
@@ -107,14 +116,14 @@ class Piece:
         new_shape = Field(self.shape.width, self.shape.height)
         for x in range(self.shape.width):
             for y in range(self.shape.height):
-                new_shape[x, self.shape.height-1-y] = self.shape[y,x]
+                new_shape[x, self.shape.height - 1 - y] = self.shape[y, x]
         self.shape.set_cells(new_shape.cells)
 
     def rotate_ccw(self):
         new_shape = Field(self.shape.width, self.shape.height)
         for x in range(self.shape.width):
             for y in range(self.shape.height):
-                new_shape[self.shape.width-1-x, y] = self.shape[y,x]
+                new_shape[self.shape.width - 1 - x, y] = self.shape[y, x]
         self.shape.set_cells(new_shape.cells)
 
     def safe_rotate_cw(self, field):
@@ -194,7 +203,9 @@ class Game:
         self.piece = generate_random_piece()
         self.field = Field(20, 10)
         self.timer = 0
-
+        self.score = 0
+        self.score_font = pygame.font.Font(None, 36)
+        self.difficulty_index = 2
         self.keys_used = set()
 
 
@@ -202,8 +213,9 @@ class Game:
         if not self.piece.move_down(self.field):
             for coord in self.piece.occupied_cells():
                 self.field[coord] = 1
-                self.piece = generate_random_piece()
-
+            rows_cleared = self.field.clear_filled_rows()
+            self.update_score(rows_cleared)
+            self.piece = generate_random_piece()
 
     def redraw(self):
         screen.fill((0, 0, 0))
@@ -215,16 +227,21 @@ class Game:
         for coord in self.piece.occupied_cells():
             pygame.draw.rect(screen, (255, 0, 0), (coord[1] * 40, coord[0] * 40, 40, 40))
 
+        score_surface = self.score_font.render(f'Score: {self.score}', True, (255, 255, 255))
+        screen.blit(score_surface, (400 // 2 + 20, 10))
+
         pygame.display.flip()
 
     def process_keys(self):
         keys = pygame.key.get_pressed()
-        keynames = [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN]
+        keynames = [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN, pygame.K_EQUALS]
         keyactions = [
             (lambda: self.piece.move_left(self.field)),
             (lambda: self.piece.move_right(self.field)),
-            (lambda: self.piece.safe_rotate_ccw(self.field)),
             (lambda: self.piece.safe_rotate_cw(self.field)),
+            (lambda: self.piece.move_down(self.field)),
+            (lambda: self.increase_score()),
+
         ]
 
         for i, name in enumerate(keynames):
@@ -254,10 +271,16 @@ class Game:
             if self.timer % TICKS_PER_FRAME == 0: self.redraw()
             if self.timer % TICKS_PER_UPDATE == 0: self.step()
 
+    def update_score(self, rows_cleared):
+        self.score += rows_cleared
 
-DIFFICULTY_SPEEDS = [10, 20, 30, 60, 180]
+
+    def increase_score(self):
+        self.score += 1
+
+DIFFICULTY_SPEEDS = [5, 10, 15, 20, 30, 45, 60, 80, 100, 120, 150]
 TICKS_PER_FRAME = 3
-TICKS_PER_UPDATE = DIFFICULTY_SPEEDS[2]
+TICKS_PER_UPDATE = DIFFICULTY_SPEEDS[5]
 
 game = Game()
 game.run()
